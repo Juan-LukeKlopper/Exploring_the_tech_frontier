@@ -13,7 +13,7 @@ As a lifelong learner and software engineer, I've always been captivated by the 
 
 With a solid foundation in computer science, honed through my academic journey and professional experience, I'm ready to dissect the tech landscape. What sets this blog apart is my commitment to making these intricate concepts not just understandable but also enjoyable. I firmly believe that knowledge should be as accessible as it is enlightening.
 
-Each month, I'll be your guide through the labyrinth of tech innovations. Whether it's decoding the mysteries of DevOps practices, exploring the endless possibilities of JavaScript, or unraveling the complexities of blockchain technologies, I'm here to demystify, discuss, and delve into it all.
+Each quarter, I'll be your guide through the labyrinth of tech innovations. Whether it's decoding the mysteries of DevOps practices, exploring the endless possibilities of JavaScript, or unraveling the complexities of blockchain technologies, I'm here to demystify, discuss, and delve into it all.
 
 But why, you might ask? Well, it's simple. I've always been passionate about nurturing the flames of curiosity and fostering a culture of continuous learning. By sharing my insights, I aim to inspire, educate, and spark that same enthusiasm within you.
 
