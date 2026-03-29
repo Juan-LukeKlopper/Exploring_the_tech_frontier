@@ -188,6 +188,79 @@ Wasm is best understood by use-case classes rather than hype slogans.
 
 Wasm is not primarily a replacement for GPU-native training or heavyweight HPC stacks. Its advantage is safe, portable execution for specific layers of a broader system.
 
+## Deep Dive: Rapier (Deterministic Physics and Collision Systems on Wasm)
+
+If you are building simulations, games, robotics-style environments, or any product where collision and rigid-body behavior matter, physics determinism is a huge deal.
+
+**Rapier** (from the Dimforge ecosystem) is one of the strongest examples of where Rust + Wasm shines for technically demanding workloads.
+
+### Why Rapier Fits Wasm Well
+
+- **Deterministic simulation goals** for repeatable outcomes (especially valuable in lockstep/multiplayer or replay-driven systems)
+- **Performance-sensitive numeric workloads** where native-level efficiency matters
+- **Portability** across web and non-web runtimes with the same core engine logic
+- **Memory and safety discipline** from Rust, plus Wasm sandboxing at runtime
+
+### Typical Architecture Pattern
+
+In many production designs, teams treat Rapier as a simulation core and expose a thin host bridge:
+
+1. Host app passes scene setup, timestep, and control inputs into Wasm
+2. Rapier steps the world deterministically per tick (subject to fixed-step discipline)
+3. Host reads back transforms/collision events and renders via engine/UI layer
+
+This split is powerful because it decouples:
+
+- simulation correctness from host UI framework churn
+- physics execution from platform-specific rendering pipelines
+- replay/debug tooling from device-specific behavior
+
+### Important Engineering Notes (Determinism Is a System Property)
+
+When people say \"deterministic physics,\" the engine is only one part of the equation. To preserve determinism in practice, teams usually enforce:
+
+- fixed timesteps (not variable frame-time stepping)
+- stable ordering of inputs/events
+- reproducible random seeds
+- carefully controlled floating-point and platform behavior in edge cases
+
+Wasm helps a lot by giving you a consistent execution substrate, but deterministic outcomes still require disciplined system design around the engine.
+
+## Deep Dive: Rive and Wasm for Real-Time Vector Animation
+
+Rive is a great example of Wasm enabling rich interactive graphics in the browser without forcing teams to rewrite high-performance runtime logic in JavaScript.
+
+At a high level, Rive workflows typically involve:
+
+- designing animations/state machines in Rive tooling
+- exporting `.riv` assets
+- loading and driving those assets through a runtime (including web pathways that leverage Wasm)
+
+### Why Wasm Is a Good Fit for Rive-Style Workloads
+
+- **Complex runtime logic** (animation state machines, interpolation, constraints) benefits from native-grade implementations
+- **Cross-platform consistency** matters when the same animation behaviors must match across web/mobile/desktop targets
+- **Predictable performance** is crucial for interaction-heavy product surfaces
+
+### Where Wasm Sits in the Pipeline
+
+In browser contexts, Wasm commonly handles the computationally heavy parts of the animation runtime while host-side JS/TS coordinates:
+
+- canvas/WebGL/WebGPU integration
+- application event wiring
+- lifecycle orchestration with the surrounding UI framework
+
+This architecture mirrors a broader Wasm pattern:
+
+- keep platform/UI orchestration in host-native layers
+- move correctness/performance-critical engine code into Wasm modules
+
+### Why This Matters Beyond Animation
+
+Rive demonstrates a broader lesson about Wasm adoption in 2026:
+
+Wasm is most valuable when it acts as a **portable engine core** for complex domains (animation, physics, media, layout, analysis), while host frameworks handle product integration ergonomics.
+
 ## WASI: Why It Was a Turning Point
 
 WASI (WebAssembly System Interface) is the answer to a foundational question:
