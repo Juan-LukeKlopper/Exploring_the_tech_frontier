@@ -1,419 +1,117 @@
 ---
 slug: "what-is-webassembly-and-where-it-fits-in-2026"
-title: "What Is WebAssembly (Wasm)? A Deep Technical Guide + State of Wasm in 2026"
+title: "What Is WebAssembly, Really?"
 authors: [jl]
 tags: [wasm, webassembly, wasi, runtime, rust, ai]
 enableComments: true
 ---
 
-# What Is WebAssembly (Wasm)? A Deep Technical Guide + State of Wasm in 2026
+# What Is WebAssembly, Really?
 
-## Introduction
+When WebAssembly first appeared in mainstream developer conversations, it was mostly introduced as "fast code for the browser." That was not wrong, but it was incomplete. In 2026, Wasm matters for a much bigger reason. It gives us a practical way to move executable logic between environments while keeping security boundaries tighter and platform behavior more predictable than we usually get from native binary distribution.
 
-Over the last few years, WebAssembly has gone from "that thing browsers added" to a serious cross-platform runtime story used in production systems.
+If you have ever had to ship the same logic to the browser, to a server process, and to an edge runtime, you already know why that matters. The cost of rewriting logic for every environment is enormous, and the cost of trusting untrusted extensions is even worse. Wasm sits right in the middle of those two problems.
 
-The problem is that most conversations still happen at one of two unhelpful levels:
+In this post I want to walk through Wasm as one connected story instead of a glossary. We will start with what it is, move through how it actually runs, then look at where it is used today, including the places where it genuinely shines and the places where it still needs careful engineering.
 
-- **Too shallow**: "Wasm is fast and portable."
-- **Too hype-heavy**: "Wasm will replace everything."
+## What Wasm is and what it was meant to solve
 
-If you already think technically and care about runtime architecture, isolation boundaries, interface contracts, deployment artifacts, and cross-platform execution models, you need a better explanation.
+At its core, WebAssembly is a compact binary format for executable code, plus a runtime model that hosts can implement. The reason that matters is not only speed. The deeper idea is that the code artifact is portable and the runtime boundary is explicit. A Wasm module does not start with the same assumptions a native process has. It has to be connected to the host deliberately.
 
-So this post is exactly that.
+The original mission was web-focused. Browsers needed a way to run heavy workloads from languages like C, C++, and Rust with far better performance characteristics than plain JavaScript for certain classes of work. That mission succeeded. We got meaningful gains in domains like media processing, graphics-heavy applications, and computational kernels that run inside interactive web apps.
 
-We will start with the fundamentals:
+But once people saw that the format was portable and sandbox-friendly, the question changed. Instead of asking whether Wasm could speed up browser code, teams started asking whether Wasm could become a safer unit of execution for plugins, extensions, and multi-tenant logic outside the browser.
 
-1. What Wasm is
-2. How it works under the hood
-3. Who the key ecosystem players are
-4. What you can build with it
-5. How WASI, the Component Model, and package/distribution tooling fit in
-6. How to reason about "run anywhere with a Wasm runtime" in the real world
+That is where the modern Wasm story really begins.
 
-Then we will zoom out and map the **state of Wasm in 2026**.
+## How Wasm actually runs without the hand-wavy version
 
-## What Is WebAssembly?
+The easiest way to understand execution is to imagine what happens when your host receives a module file.
 
-WebAssembly (Wasm) is a **portable binary instruction format** and an **execution model** designed to run code safely and efficiently across different host environments.
+First, source code from a language toolchain is compiled into a `.wasm` artifact. That artifact is not x86 or ARM machine code. It is a platform-neutral instruction format with typed function signatures, imports and exports, memory definitions, and the rest of the module structure.
 
-Think of Wasm as:
+Then the runtime validates the module before execution. This step is not a small detail. Validation is part of Wasm's safety model because it rejects invalid structure and type-inconsistent control paths before execution begins.
 
-- a compilation target for languages like Rust, C/C++, Zig, Go (with caveats), and others
-- a sandboxed module format (`.wasm`)
-- a runtime contract between module code and a host (browser/runtime/embedded host)
+After validation, the runtime compiles the module to native instructions or loads a previously compiled representation, depending on runtime strategy. Some deployments optimize aggressively for startup, some for steady-state throughput, and many mix strategies.
 
-The core design goals were:
+Then comes instantiation, which is where the architecture decisions become real. The module is wired to host-provided imports. This is not just wiring function names. It is where you decide what the module can and cannot do. If your host exposes only a narrow interface, the module's effective power remains narrow. If your host exposes filesystem and network capabilities, then the module can operate in that larger envelope. In practice, this import boundary is one of the most important reasons Wasm became so attractive for embedded execution.
 
-- **Portability**: same module format across platforms
-- **Safety**: strict sandboxing and validation
-- **Performance**: fast parse/validate/compile/instantiate pipeline
-- **Composability**: explicit imports/exports and host capabilities
+Once instantiated, code executes in the Wasm sandbox with controlled memory and host interaction boundaries. The point is not that bugs disappear. The point is that the blast radius becomes easier to reason about compared to many traditional extension models.
 
-Wasm was never designed to be "an operating system" or "a full app framework by itself." It is an execution primitive that can be embedded into larger systems.
+## Why security engineers and platform engineers both care
 
-## How Does Wasm Work Internally?
+Wasm's biggest long-term advantage is how naturally it fits capability-oriented design. In many existing systems, "extension" means running third-party code with too much ambient authority, then hoping that process-level boundaries are enough. Wasm encourages a different default. Modules begin with very little, then gain access only through what the host chooses to provide.
 
-To understand where Wasm shines (and where it does not), it helps to look at its execution model in layers.
+That model is useful whether you are building a plugin system, a customer-defined automation step, or a multi-tenant product where each tenant can upload custom logic. You still need careful host design, but the default posture is healthier.
 
-### 1) Compilation to Wasm Bytecode
+This is one reason Wasm did not replace containers, yet still became important. Containers are still great as infrastructure packaging and isolation primitives. Wasm often appears one layer above that, as the unit of embedded or untrusted logic inside a broader platform.
 
-You write source code in a language with a Wasm backend (for example Rust). The compiler emits a `.wasm` module.
+## The ecosystem that made this practical
 
-That module is not machine code for x86/ARM. It is platform-neutral bytecode with:
+Wasm became usable because several groups pushed in parallel. Browser vendors made the web execution story real. Standards work kept the core model coherent. Runtime and tooling communities made server and edge use practical. Without all three, Wasm would have remained a niche curiosity.
 
-- function bodies
-- type signatures
-- imports/exports
-- memory/table definitions
-- metadata/custom sections (often for tooling/debugging)
+The Bytecode Alliance and the Wasmtime ecosystem played a major role in making production runtimes feel less experimental and more operationally reliable. At the same time, the surrounding tools for inspecting, composing, and shipping modules improved enough that teams could move beyond toy demos.
 
-### 2) Validation
+This maturation matters because engineers do not adopt execution models out of excitement alone. They adopt when debugging, deployment, observability, and security review become survivable.
 
-Before execution, runtimes validate the module:
+## WASI and why it changed the server-side conversation
 
-- structural correctness
-- type safety constraints
-- control-flow validity
+WASI changed the game by giving non-browser Wasm a clearer systems interface story. Before that, every host risked inventing its own custom interface contract for basic services. With WASI, the ecosystem gained a common direction for how modules request and use operating-system-like capabilities.
 
-Validation is one of the key safety properties. Wasm modules are not arbitrary native binaries.
+The important thing is not to think of WASI as "now Wasm is a normal process." It is closer to the opposite. WASI gives hosts a standardized way to grant specific capabilities while keeping the capability boundary explicit. That keeps the security model coherent while still allowing useful server-side work.
 
-### 3) Compilation (JIT/AOT strategies)
+In real projects, this means teams can design runtimes where a module has exactly the filesystem scope or network ability it needs and nothing beyond that. This sounds simple in theory, but in practice it changes how people trust extension points.
 
-The runtime then compiles Wasm to native instructions (or uses precompiled strategies).
+## Package management and the part everyone argues about
 
-Depending on runtime and deployment strategy, this can involve:
+When people ask for "the WebAssembly package manager," they often mean different things. Sometimes they mean source dependencies inside a language ecosystem. Sometimes they mean binary component distribution. Sometimes they mean versioned interface compatibility across teams.
 
-- just-in-time compilation on load
-- ahead-of-time compilation for lower startup overhead
-- caching compiled artifacts
+That mismatch created confusion for years. The ecosystem moved through several experiments, and not all of them stuck. In 2026 the picture is better, but still layered. Source-level dependency management still lives mostly in language-native tools. Artifact distribution and cross-language composition increasingly rely on component-oriented flows, typed interfaces, and registry strategies that look more like platform artifact management than classic language package management.
 
-### 4) Instantiation
+The practical takeaway is that there is no one magical command that solves every packaging problem. There is, however, a much stronger set of building blocks than we had a few years ago.
 
-A module is instantiated with concrete imports from the host environment:
+## Running one Wasm app across platforms, honestly
 
-- host functions
-- memory/table bindings
-- WASI/system-like capabilities (if supported and granted)
+One of Wasm's most attractive promises is that the same module can run anywhere there is a compatible runtime. That promise is substantially true, but only when people state the conditions clearly.
 
-This is where capability boundaries are enforced.
+Portability depends on runtime availability, target selection, and host capability contracts. A pure compute module with minimal assumptions will travel very easily. A module that expects specific host services needs those services exposed consistently by whichever runtime you deploy to.
 
-### 5) Execution in a Sandbox
+This is why target choices matter so much. The minimal `wasm32-unknown-unknown` target is excellent when you want very few assumptions. WASI-oriented targets are usually the better fit when your module needs a defined systems interface for server or edge environments. Most early frustration came from treating those choices as interchangeable when they are not.
 
-Wasm uses controlled abstractions:
+So yes, Wasm lets you run applications across platforms in a way that is genuinely powerful. It is just not magic. You still have to engineer your host contract.
 
-- **Linear memory**: contiguous byte-addressable memory space
-- **Tables**: indirect function reference structures
-- **Structured control flow**: no arbitrary jumps the way raw machine code allows
+## Rapier and what deterministic physics teaches us about Wasm
 
-The module cannot automatically access host filesystem/network/process APIs unless the host deliberately exposes them.
+Rapier is one of the best examples of Wasm being useful for reasons deeper than buzzwords. Physics and collision workloads are numerically sensitive, performance-sensitive, and often hard to keep consistent across platforms. That makes them a strong stress test for portability claims.
 
-## The Security Model: Capability-Driven by Design
+In practice, teams often treat Rapier as the simulation core while the host environment handles orchestration, input collection, and rendering. That split works well because it keeps simulation logic centralized and portable while allowing UI and rendering stacks to evolve separately.
 
-One of Wasm's strongest properties is not raw speed; it is **isolation with explicit capability grant**.
+The determinism angle is especially important. People sometimes assume determinism comes "for free" from using a shared engine. In reality, deterministic behavior is a system-level property. You still need fixed timestep discipline, stable input ordering, and controlled randomness strategy. Wasm helps by reducing cross-platform drift in the execution substrate, but engineering discipline is what turns that into reproducible behavior.
 
-In native execution, binaries often inherit broad process-level permissions by default. In Wasm, the module starts with almost nothing and receives access only through imports/capabilities.
+This is exactly the kind of domain where Wasm earns its place: complex core logic that benefits from portability, safety boundaries, and repeatable execution behavior.
 
-This model is why Wasm is attractive for:
+## Rive and why animation runtimes fit the Wasm model
 
-- untrusted plugin execution
-- user-provided code in SaaS products
-- policy engines and extension systems
-- multi-tenant compute boundaries
+Rive is another strong case study because interactive animation is both performance-sensitive and product-sensitive. Users notice dropped frames and inconsistent behavior immediately, and teams need the same animation logic to behave consistently across environments.
 
-This is also why people often compare Wasm to containers in architecture discussions. They solve different layers of isolation, and in many systems they are complementary.
+Wasm fits here because it lets runtime-heavy animation logic live in a high-performance engine layer while host-side application code handles integration details. In browser contexts, application code still coordinates canvas or GPU integration and event wiring, but the computationally dense part of the animation runtime can be delivered as a portable module.
 
-## Who Are the Big Players in the Wasm Ecosystem?
+That architecture mirrors a broader pattern you now see across Wasm adoption. Product teams keep platform orchestration in host-native layers and place correctness- and performance-critical engines behind a Wasm boundary. Rive demonstrates that this is not theoretical architecture language; it is a practical design that ships.
 
-A healthy Wasm architecture view includes standards bodies, runtimes, browser vendors, toolchain teams, and product companies.
+## Front-end frameworks, industry use, and the 2026 reality
 
-### Standards and Specification
+By 2026, the discussion around Rust-to-Wasm front-end frameworks such as Leptos and Yew has become much healthier. They are no longer novelty projects, but they are also not universal defaults. They are good choices for teams that value Rust-centric workflows and can absorb the trade-offs around ecosystem integration and team specialization.
 
-- **W3C WebAssembly Community/Working Group**: specification evolution for core Wasm and related proposals
+Industry adoption followed a similar path from hype to fit. Companies use Wasm where it solves hard constraints, not where it is fashionable. Canva is frequently mentioned because creative tooling has exactly the mix of performance sensitivity, portability needs, and safe embedding concerns where Wasm can deliver meaningful value.
 
-### Browser Engine Implementers
+In AI and LLM products, Wasm has also found a clear role, but not in the place many people first guessed. It is not replacing GPU-heavy training infrastructure. Instead, it is increasingly useful for sandboxed tool execution, deterministic transformation steps, and extension boundaries in multi-tenant systems.
 
-- **Google (V8 / Chrome)**
-- **Mozilla (SpiderMonkey / Firefox)**
-- **Apple (JavaScriptCore / WebKit / Safari)**
+All of this points to the same conclusion. Wasm in 2026 is no longer a "replace everything" narrative. It is a focused architecture tool that keeps proving itself in the domains where execution portability and capability control matter at the same time.
 
-These organizations made Wasm a real web platform capability.
+## Closing thoughts
 
-### Runtime and Systems Ecosystem
+If I had to summarize Wasm in one sentence, I would say this: WebAssembly is a practical way to ship executable logic across environments with stronger control over safety boundaries than most traditional extension and binary distribution models.
 
-- **Bytecode Alliance** (major force behind production-focused runtime/tooling work)
-- **Wasmtime** (widely used runtime)
-- **Other runtimes/hosts** (e.g., specialized edge/embedded runtimes)
+That is why it survived the hype cycle. It solves real engineering problems.
 
-### Cloud/Edge/Product Platforms
-
-- Companies building Wasm-based execution paths in edge, plugins, and extensibility layers
-- Design/productivity and developer-platform companies using Wasm for sandboxed performance-sensitive modules
-
-In 2026, Wasm adoption is less about one "winner-takes-all" platform and more about ecosystem interoperability patterns.
-
-## What Can We Do with Wasm?
-
-Wasm is best understood by use-case classes rather than hype slogans.
-
-### In the Browser
-
-- high-performance media processing
-- graphics-heavy applications
-- computational kernels in interactive apps
-- running existing systems code in a web context
-
-### On the Server/Edge
-
-- fast-start request handlers
-- sandboxed per-tenant logic
-- extension/plugin execution
-- policy and rules engines
-
-### In Developer Platforms
-
-- custom user extensions executed safely
-- embeddable workflows and automation logic
-- language-agnostic plugin ABI strategies (with Component Model patterns)
-
-### In Security-Conscious Architectures
-
-- executing third-party code with narrow capabilities
-- reducing blast radius of extension points
-
-### In AI/LLM Systems
-
-- sandboxed tool execution for agents
-- deterministic pre/post-processing stages
-- portable inference for smaller models in constrained environments
-
-Wasm is not primarily a replacement for GPU-native training or heavyweight HPC stacks. Its advantage is safe, portable execution for specific layers of a broader system.
-
-## Deep Dive: Rapier (Deterministic Physics and Collision Systems on Wasm)
-
-If you are building simulations, games, robotics-style environments, or any product where collision and rigid-body behavior matter, physics determinism is a huge deal.
-
-**Rapier** (from the Dimforge ecosystem) is one of the strongest examples of where Rust + Wasm shines for technically demanding workloads.
-
-### Why Rapier Fits Wasm Well
-
-- **Deterministic simulation goals** for repeatable outcomes (especially valuable in lockstep/multiplayer or replay-driven systems)
-- **Performance-sensitive numeric workloads** where native-level efficiency matters
-- **Portability** across web and non-web runtimes with the same core engine logic
-- **Memory and safety discipline** from Rust, plus Wasm sandboxing at runtime
-
-### Typical Architecture Pattern
-
-In many production designs, teams treat Rapier as a simulation core and expose a thin host bridge:
-
-1. Host app passes scene setup, timestep, and control inputs into Wasm
-2. Rapier steps the world deterministically per tick (subject to fixed-step discipline)
-3. Host reads back transforms/collision events and renders via engine/UI layer
-
-This split is powerful because it decouples:
-
-- simulation correctness from host UI framework churn
-- physics execution from platform-specific rendering pipelines
-- replay/debug tooling from device-specific behavior
-
-### Important Engineering Notes (Determinism Is a System Property)
-
-When people say \"deterministic physics,\" the engine is only one part of the equation. To preserve determinism in practice, teams usually enforce:
-
-- fixed timesteps (not variable frame-time stepping)
-- stable ordering of inputs/events
-- reproducible random seeds
-- carefully controlled floating-point and platform behavior in edge cases
-
-Wasm helps a lot by giving you a consistent execution substrate, but deterministic outcomes still require disciplined system design around the engine.
-
-## Deep Dive: Rive and Wasm for Real-Time Vector Animation
-
-Rive is a great example of Wasm enabling rich interactive graphics in the browser without forcing teams to rewrite high-performance runtime logic in JavaScript.
-
-At a high level, Rive workflows typically involve:
-
-- designing animations/state machines in Rive tooling
-- exporting `.riv` assets
-- loading and driving those assets through a runtime (including web pathways that leverage Wasm)
-
-### Why Wasm Is a Good Fit for Rive-Style Workloads
-
-- **Complex runtime logic** (animation state machines, interpolation, constraints) benefits from native-grade implementations
-- **Cross-platform consistency** matters when the same animation behaviors must match across web/mobile/desktop targets
-- **Predictable performance** is crucial for interaction-heavy product surfaces
-
-### Where Wasm Sits in the Pipeline
-
-In browser contexts, Wasm commonly handles the computationally heavy parts of the animation runtime while host-side JS/TS coordinates:
-
-- canvas/WebGL/WebGPU integration
-- application event wiring
-- lifecycle orchestration with the surrounding UI framework
-
-This architecture mirrors a broader Wasm pattern:
-
-- keep platform/UI orchestration in host-native layers
-- move correctness/performance-critical engine code into Wasm modules
-
-### Why This Matters Beyond Animation
-
-Rive demonstrates a broader lesson about Wasm adoption in 2026:
-
-Wasm is most valuable when it acts as a **portable engine core** for complex domains (animation, physics, media, layout, analysis), while host frameworks handle product integration ergonomics.
-
-## WASI: Why It Was a Turning Point
-
-WASI (WebAssembly System Interface) is the answer to a foundational question:
-
-> How should Wasm modules interact with operating-system-like services outside the browser?
-
-Without WASI, each runtime would invent its own ad-hoc host ABI. With WASI, ecosystems can converge on standardized capability-oriented interfaces for:
-
-- filesystem access (explicitly granted)
-- networking (explicitly granted)
-- clocks, randomness, and host services
-
-The important point is architectural: **WASI does not remove sandboxing; it defines controlled interfaces through which capabilities are granted**.
-
-That makes production patterns much cleaner and more portable.
-
-## The Component Model and WIT
-
-As the ecosystem matured, people realized that running one module is not enough. Real systems need modules to interoperate cleanly across language boundaries.
-
-This is where the **Component Model** and **WIT (WebAssembly Interface Types)** matter.
-
-- WIT defines typed interface contracts
-- Components package modules with explicit interface boundaries
-- Tooling can compose components more safely than ad-hoc ABI glue
-
-This is the difference between:
-
-- "I can run this Wasm blob"
-- and "I can build maintainable, multi-team, multi-language systems with stable interfaces"
-
-That shift is a major reason Wasm became more production-friendly over time.
-
-## WebAssembly Package Management: What People Mean by It
-
-When people say "WebAssembly package manager," they are often talking about several different layers at once.
-
-### Layer 1: Language Package Management
-
-- Rust crates (`cargo`)
-- npm packages for JS glue/web distribution
-- language-specific dependency systems
-
-These solve source/dependency concerns in their ecosystems, but not always component-level binary distribution.
-
-### Layer 2: Wasm/Component Artifact Distribution
-
-Teams increasingly use:
-
-- component-aware tooling
-- OCI-compatible registries and artifact flows
-- typed interface contracts (WIT) to reason about compatibility
-
-There have also been ecosystem experiments specifically targeting package/distribution semantics for Wasm artifacts. Some gained traction, others were transient, and many ideas got folded into broader component-and-registry workflows.
-
-The practical reality in 2026:
-
-- there is no single universal package story as simple as "just npm"
-- but the building blocks are mature enough for production systems with intentional tooling choices
-
-## Running Wasm Applications on Any Platform: What Is True and What Is Marketing?
-
-You asked for the practical version, so let us be precise.
-
-### The Useful Truth
-
-A Wasm module can run across many OS/CPU platforms **if** a compatible runtime exists and required host capabilities/interfaces are available.
-
-This is a major portability gain compared to distributing separate native binaries per target architecture.
-
-### The Important Caveats
-
-"Run anywhere" depends on:
-
-- target choice (`wasm32-unknown-unknown` vs WASI-oriented targets)
-- runtime support level
-- required host capabilities (filesystem/network/time/etc.)
-- interface expectations (especially in componentized systems)
-
-So the rigorous claim is:
-
-> Wasm gives you a portable execution artifact model with strong cross-platform potential, provided host/runtime contracts are defined and satisfied.
-
-That is still a huge win in real engineering terms.
-
-## `wasm32-unknown-unknown` vs WASI Targets
-
-This is one of the most common technical mistakes teams make early.
-
-- **`wasm32-unknown-unknown`**
-  - very minimal assumptions
-  - ideal for pure compute modules or browser-oriented pathways
-  - no built-in system interface expectation
-
-- **WASI-oriented targets** (historically including `wasm32-wasi`, with evolving preview/variant support)
-  - intended for modules expecting WASI capabilities
-  - better fit for portable server/edge execution patterns
-
-If you need host services, choose targets and runtime contracts intentionally. If you need minimal portable compute, the unknown target can be exactly right.
-
-## State of Wasm in 2026
-
-Now that we have the technical foundation, here is the 2026 status.
-
-### 1) Hype Has Settled into Real Architecture
-
-Wasm did not replace JavaScript, Linux processes, or containers. It became a high-value building block where portability + isolation + startup characteristics + language flexibility matter together.
-
-### 2) Runtimes and Tooling Are Much More Practical
-
-Wasmtime and related runtime/tooling work significantly improved the path from prototype to production.
-
-### 3) Front-End Rust/Wasm Frameworks Found a Real Niche
-
-Frameworks like **Yew** and **Leptos** proved viable for teams that want Rust-centric UI/full-stack workflows.
-
-They are not universal defaults, but they are no longer science projects.
-
-### 4) Industry Usage Is Concrete
-
-Large companies use Wasm for real workloads where sandboxing and predictable cross-platform behavior are strategic. Canva is frequently referenced in this conversation because performance-sensitive, portable module execution in creative tooling is exactly the kind of domain where Wasm can be compelling.
-
-### 5) AI/LLM Integration Is Growing in the Right Places
-
-Wasm's role in AI is less about replacing GPU-heavy model training and more about:
-
-- secure extension/tool execution
-- deterministic transformation stages
-- portable runtime boundaries for product features
-
-This is where Wasm's capability model creates operational value.
-
-## A Practical Mental Model for Engineers
-
-If you are evaluating Wasm in 2026, avoid "all-in" or "all-out" thinking.
-
-Use Wasm when you need a combination of:
-
-- strong sandboxing
-- explicit capability control
-- cross-platform artifact portability
-- embeddable execution inside existing products
-
-Do not force Wasm where native processes or standard web stacks are already ideal.
-
-The best architectures treat Wasm as a targeted execution layer, not a universal replacement for every other runtime model.
-
-## Conclusion
-
-Wasm started as a browser performance and portability story, but it evolved into something broader and more durable: a secure, portable execution substrate that now powers practical systems across web, edge, enterprise platforms, and selected AI product layers.
-
-If you wanted the deepest short answer to "what is Wasm?" it is this:
-
-**Wasm is a capability-friendly, sandboxed, portable compute format and runtime model that lets us ship executable logic across platforms with far more control over safety and integration boundaries than traditional binary distribution usually provides.**
-
-That is why it still matters in 2026.
+And that is also why the best Wasm systems are not the ones that try to force Wasm into everything. They are the ones that use it where it creates leverage, then let the rest of the stack do what it already does best.
